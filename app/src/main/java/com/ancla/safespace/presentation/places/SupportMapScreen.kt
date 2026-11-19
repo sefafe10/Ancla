@@ -284,7 +284,7 @@ fun SupportMapScreen(modifier: Modifier = Modifier) {
                         onCall = { dial(context, place.phone) },
                         onWebsite = { openWebsite(context, place.website) },
                         onEmail = { openEmail(context, place.email) },
-                        onDirections = { openDirections(context, place) },
+                        onOpenMaps = { openPlaceInMaps(context, place) },
                     )
                 }
             } else if (!isLoading && errorMessage == null) {
@@ -328,7 +328,7 @@ private fun PlaceCard(
     onCall: () -> Unit,
     onWebsite: () -> Unit,
     onEmail: () -> Unit,
-    onDirections: () -> Unit,
+    onOpenMaps: () -> Unit,
 ) {
     val tint = when (place.category) {
         "Hospital / urgencias" -> AnclaColors.RoseTint
@@ -367,8 +367,8 @@ private fun PlaceCard(
                     TextButton(onClick = onCall) { Text("Llamar", color = AnclaColors.Teal) }
                 }
             }
-            Button(onClick = onDirections, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(15.dp)) {
-                Text("Abrir ruta en Google Maps  →", fontWeight = FontWeight.SemiBold)
+            Button(onClick = onOpenMaps, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(15.dp)) {
+                Text("Ver ficha en Google Maps  →", fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -400,19 +400,22 @@ private fun dial(context: android.content.Context, number: String) {
     runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", normalized, null))) }
 }
 
-private fun openDirections(context: android.content.Context, place: SupportPlace) {
-    val destination = "${place.latitude},${place.longitude}"
-    val directionsUrl = Uri.parse("https://www.google.com/maps/dir/").buildUpon()
+private fun openPlaceInMaps(context: android.content.Context, place: SupportPlace) {
+    val searchQuery = if (place.address.isNotBlank()) {
+        "${place.name}, ${place.address}"
+    } else {
+        "${place.name}, ${place.latitude}, ${place.longitude}"
+    }
+    val placeUrl = Uri.parse("https://www.google.com/maps/search/").buildUpon()
         .appendQueryParameter("api", "1")
-        .appendQueryParameter("destination", destination)
-        .appendQueryParameter("dir_action", "navigate")
+        .appendQueryParameter("query", searchQuery)
         .build()
     val googleMapsIntent = Intent(
         Intent.ACTION_VIEW,
-        directionsUrl,
+        placeUrl,
     ).setPackage("com.google.android.apps.maps")
     runCatching { context.startActivity(googleMapsIntent) }.onFailure {
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, directionsUrl)) }
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, placeUrl)) }
     }
 }
 
