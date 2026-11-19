@@ -85,12 +85,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import com.ancla.safespace.data.local.SecureStore
@@ -107,6 +110,7 @@ import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import android.graphics.BitmapFactory
 
 private enum class Screen { ONBOARDING, HOME, MOOD, PROGRESS, JOURNAL, SUPPORT, BREATHING, GROUNDING, PLAN, MAP, RELAX, MINDFUL, GOALS, RESOURCES }
 
@@ -315,6 +319,7 @@ private fun OnboardingScreen(initial: UserData, modifier: Modifier, onContinue: 
         )
         Text("Empecemos por lo esencial", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         InfoCard("Tu espacio, a tu ritmo", "Tus datos se guardan cifrados en este dispositivo. Puedes cambiar estas opciones más adelante.", AnclaColors.TealTint, "✦")
+        MascotMessageCard("¡Hola! Soy Anclita", "Cuando elijas tu país, busco tu línea de apoyo. Mientras, practico una voltereta.", 1, 3)
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
                 value = selected.country,
@@ -384,7 +389,12 @@ private fun HomeScreen(
         ).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(15.dp),
     ) {
-        WelcomeBanner("Hola. Estás aquí, ahora.", "Qué bueno que te hayas dado este momento.")
+        MascotMessageCard(
+            title = when (moodToday?.mood) { "low", "very_low" -> "Me quedo aquí contigo."; "well" -> "¡Esa energía te sienta genial!"; else -> "Hola. Aquí tienes un ratito para ti." },
+            detail = when (moodToday?.mood) { "low", "very_low" -> "No hace falta arreglarlo todo ahora. Un paso pequeño basta."; "well" -> "Celebremos lo pequeño, a tu manera."; else -> "Qué bueno que te hayas regalado este momento." },
+            primaryPose = if (moodToday?.mood == "low" || moodToday?.mood == "very_low") 2 else 0,
+            secondaryPose = if (moodToday?.mood == "low" || moodToday?.mood == "very_low") 1 else 3,
+        )
         Text("¿Cómo te encuentras hoy?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text("Puedes expresarlo a tu ritmo, sin presiones.", color = AnclaColors.MutedInk)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -463,10 +473,7 @@ private fun CrisisDialog(userData: UserData, contacts: List<SupportContact>, onD
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(contact.name, Modifier.weight(1f))
                             TextButton(onClick = { dial(context, contact.phone) }) { Text("Llamar") }
-                            TextButton(onClick = {
-                                val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(contact.phone)}")).putExtra("sms_body", "Hola, ¿puedes hablar conmigo un momento? No me encuentro bien y me ayudaría tener compañía.")
-                                runCatching { context.startActivity(intent) }
-                            }) { Text("Mensaje") }
+                            TextButton(onClick = { shareSupportMessage(context) }) { Text("Compartir") }
                         }
                     }
                 }
@@ -655,14 +662,15 @@ private fun SupportHubScreen(
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Text(contact.name, fontWeight = FontWeight.Bold); Text(contact.phone, color = AnclaColors.MutedInk)
-                    Row {
-                        TextButton(onClick = { dial(context, contact.phone) }) { Text("Llamar") }
-                        TextButton(onClick = {
-                            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(contact.phone)}")).putExtra("sms_body", "Hola, ¿puedes hablar conmigo un momento? No me encuentro bien y me ayudaría tener compañía.")
-                            runCatching { context.startActivity(intent) }
-                        }) { Text("Preparar mensaje") }
-                        TextButton(onClick = { name = contact.name; phone = contact.phone; editIndex = index }) { Text("Editar") }
-                        TextButton(onClick = { onSaveContact(contacts.filterIndexed { i, _ -> i != index }) }) { Text("Quitar", color = AnclaColors.Rose) }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { dial(context, contact.phone) }, modifier = Modifier.weight(1f)) { Text("Llamar", maxLines = 1) }
+                            OutlinedButton(onClick = { shareSupportMessage(context) }, modifier = Modifier.weight(1f)) { Text("Compartir mensaje", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { name = contact.name; phone = contact.phone; editIndex = index }) { Text("Editar") }
+                            TextButton(onClick = { onSaveContact(contacts.filterIndexed { i, _ -> i != index }) }) { Text("Quitar", color = AnclaColors.Rose, maxLines = 1, softWrap = false) }
+                        }
                     }
                 }
             }
@@ -1132,6 +1140,70 @@ private fun WelcomeBanner(title: String, detail: String) {
             Text("☀", modifier = Modifier.graphicsLayer { rotationZ = rotation }, fontSize = 49.sp, color = Color(0xFFFFE7A7))
         }
     }
+}
+
+@Composable
+private fun MascotMessageCard(title: String, detail: String, primaryPose: Int, secondaryPose: Int) {
+    var pose by remember(primaryPose, secondaryPose) { mutableStateOf(primaryPose) }
+    LaunchedEffect(primaryPose, secondaryPose) {
+        while (true) {
+            delay(4_800)
+            pose = if (pose == primaryPose) secondaryPose else primaryPose
+        }
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, AnclaColors.TealTint),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AnclaColors.Ink)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = AnclaColors.MutedInk)
+            }
+            MascotSprite(pose, Modifier.size(116.dp))
+        }
+    }
+}
+
+@Composable
+private fun MascotSprite(pose: Int, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val sprite = remember(context) {
+        BitmapFactory.decodeResource(context.resources, com.ancla.safespace.R.drawable.ancla_mascot_sheet).asImageBitmap()
+    }
+    val motion = rememberInfiniteTransition(label = "movimiento de Anclita")
+    val bounce by motion.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1_700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "rebote suave",
+    )
+    Canvas(modifier.graphicsLayer { translationY = -5.dp.toPx() * bounce; rotationZ = -1.5f + bounce * 3f }) {
+        val cellWidth = sprite.width / 2
+        val cellHeight = sprite.height / 2
+        val safePose = pose.coerceIn(0, 3)
+        drawImage(
+            image = sprite,
+            srcOffset = IntOffset((safePose % 2) * cellWidth, (safePose / 2) * cellHeight),
+            srcSize = IntSize(cellWidth, cellHeight),
+            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
+        )
+    }
+}
+
+private fun shareSupportMessage(context: android.content.Context) {
+    val share = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, "Hola, ¿puedes hablar conmigo un momento? No me encuentro bien y me ayudaría tener compañía.")
+    }
+    runCatching { context.startActivity(Intent.createChooser(share, "Elige cómo compartir el mensaje")) }
 }
 
 @Composable
