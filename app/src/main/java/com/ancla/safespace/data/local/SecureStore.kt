@@ -22,7 +22,22 @@ data class UserData(
     val customNumber: String = "",
     val customEmergencyNumber: String = "",
     val safetyPlan: List<String> = List(6) { "" },
+    val moodEntries: List<MoodEntry> = emptyList(),
+    val journalEntries: List<JournalEntry> = emptyList(),
+    val supportContacts: List<SupportContact> = emptyList(),
+    val completedGoals: List<String> = emptyList(),
 )
+
+data class MoodEntry(
+    val day: Long,
+    val mood: String,
+    val distress: Int,
+    val anxiety: Int,
+    val note: String,
+)
+
+data class JournalEntry(val id: String, val createdAt: Long, val prompt: String, val text: String)
+data class SupportContact(val name: String, val phone: String)
 
 /** Persiste solo un bloque cifrado con AES-GCM; la clave permanece en Android Keystore. */
 class SecureStore(private val context: Context) {
@@ -34,21 +49,85 @@ class SecureStore(private val context: Context) {
         val json = JSONObject(plainText)
         val sections = json.optJSONArray("plan")
         val plan = List(6) { index -> sections?.optString(index, "") ?: "" }
+        val moodArray = json.optJSONArray("moodEntries")
+        val moodEntries = buildList {
+            if (moodArray != null) {
+                for (index in 0 until moodArray.length()) {
+                    val item = moodArray.optJSONObject(index) ?: continue
+                    val mood = item.optString("mood", "")
+                    if (mood !in MOOD_CODES) continue
+                    add(
+                        MoodEntry(
+                            day = item.optLong("day", 0L),
+                            mood = mood,
+                            distress = item.optInt("distress", 5).coerceIn(1, 10),
+                            anxiety = item.optInt("anxiety", 5).coerceIn(1, 10),
+                            note = item.optString("note", ""),
+                        ),
+                    )
+                }
+            }
+        }.distinctBy { it.day }.sortedBy { it.day }
+        val journalEntries = buildList {
+            val array = json.optJSONArray("journalEntries") ?: return@buildList
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val id = item.optString("id", "")
+                val text = item.optString("text", "")
+                if (id.isNotBlank() && text.isNotBlank()) add(JournalEntry(id, item.optLong("createdAt"), item.optString("prompt", ""), text))
+            }
+        }
+        val supportContacts = buildList {
+            val array = json.optJSONArray("supportContacts") ?: return@buildList
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val name = item.optString("name", "").trim()
+                val phone = item.optString("phone", "").trim()
+                if (name.isNotBlank() && phone.isNotBlank()) add(SupportContact(name, phone))
+            }
+        }
         return UserData(
             countryCode = json.optString("country", ""),
             customNumber = json.optString("customNumber", ""),
             customEmergencyNumber = json.optString("customEmergencyNumber", ""),
             safetyPlan = plan,
+            moodEntries = moodEntries,
+            journalEntries = journalEntries,
+            supportContacts = supportContacts,
+            completedGoals = json.optJSONArray("completedGoals")?.let { array -> List(array.length()) { array.optString(it) } }.orEmpty(),
         )
     }
 
     suspend fun save(data: UserData) {
         val plan = org.json.JSONArray().apply { data.safetyPlan.forEach { put(it) } }
+        val moodEntries = org.json.JSONArray().apply {
+            data.moodEntries.distinctBy { it.day }.sortedBy { it.day }.forEach { entry ->
+                put(
+                    JSONObject()
+                        .put("day", entry.day)
+                        .put("mood", entry.mood)
+                        .put("distress", entry.distress.coerceIn(1, 10))
+                        .put("anxiety", entry.anxiety.coerceIn(1, 10))
+                        .put("note", entry.note),
+                )
+            }
+        }
+        val journalEntries = org.json.JSONArray().apply {
+            data.journalEntries.forEach { put(JSONObject().put("id", it.id).put("createdAt", it.createdAt).put("prompt", it.prompt).put("text", it.text)) }
+        }
+        val supportContacts = org.json.JSONArray().apply {
+            data.supportContacts.forEach { put(JSONObject().put("name", it.name).put("phone", it.phone)) }
+        }
+        val completedGoals = org.json.JSONArray().apply { data.completedGoals.forEach { put(it) } }
         val json = JSONObject()
             .put("country", data.countryCode)
             .put("customNumber", data.customNumber)
             .put("customEmergencyNumber", data.customEmergencyNumber)
             .put("plan", plan)
+            .put("moodEntries", moodEntries)
+            .put("journalEntries", journalEntries)
+            .put("supportContacts", supportContacts)
+            .put("completedGoals", completedGoals)
             .toString()
         val encrypted = encrypt(json)
         context.secureDataStore.edit { preferences ->
@@ -92,6 +171,7 @@ class SecureStore(private val context: Context) {
     }
 
     private companion object {
+        val MOOD_CODES = setOf("well", "okay", "low", "very_low")
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
         const val KEY_ALIAS = "ancla_local_data_v1"
