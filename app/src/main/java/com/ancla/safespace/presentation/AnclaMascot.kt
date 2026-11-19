@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -103,6 +104,7 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
     }
     var playfulNudge by remember { mutableStateOf(0) }
     val nudge = remember { Animatable(0f) }
+    val interactionSource = remember { MutableInteractionSource() }
     LaunchedEffect(playfulNudge) {
         if (playfulNudge > 0) {
             nudge.snapTo(0f)
@@ -120,7 +122,12 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
                 contentDescription = "Anclita, toca para verla hacer un bailecito"
                 role = Role.Button
             }
-            .clickable(onClickLabel = "Hacer bailar a Anclita") { playfulNudge++ },
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClickLabel = "Hacer bailar a Anclita",
+                role = Role.Button,
+            ) { playfulNudge++ },
     ) {
         val unit = size.minDimension / 128f
         val moodLift = when (mood) {
