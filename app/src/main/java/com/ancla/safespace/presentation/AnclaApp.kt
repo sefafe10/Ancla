@@ -258,8 +258,8 @@ fun AnclaApp() {
                             onGoals = { screen = Screen.GOALS }, onResources = { screen = Screen.RESOURCES },
                             onSaveContact = { updated -> persist(userData.copy(supportContacts = updated)) },
                         )
-                        Screen.RELAX -> GuidedPracticeScreen("Relajación muscular suave", "Puedes saltarte cualquier zona y parar si algo te incomoda.", listOf("Acomódate y nota el apoyo de tu cuerpo.", "Tensa suavemente las manos durante unos segundos; después suéltalas.", "Sube los hombros con suavidad y deja que bajen.", "Aprieta ligeramente los pies y relájalos.", "Observa cómo te sientes ahora, sin tener que cambiar nada."), Modifier.padding(padding))
-                        Screen.MINDFUL -> GuidedPracticeScreen("Pausa de atención plena", "No necesitas dejar la mente en blanco.", listOf("Haz una pausa y nota dónde estás.", "Siente el contacto de tus pies con el suelo.", "Escucha tres sonidos, cercanos o lejanos.", "Observa un pensamiento como algo que pasa por tu mente.", "Elige una pequeña acción que te cuide ahora."), Modifier.padding(padding))
+                        Screen.RELAX -> GuidedPracticeScreen("Relajación muscular suave", "Puedes saltarte cualquier zona y parar si algo te incomoda.", listOf("Acomódate y nota el apoyo de tu cuerpo.", "Tensa suavemente las manos durante unos segundos; después suéltalas.", "Sube los hombros con suavidad y deja que bajen.", "Aprieta ligeramente los pies y relájalos.", "Observa cómo te sientes ahora, sin tener que cambiar nada."), Modifier.padding(padding), onFinish = { screen = Screen.HOME })
+                        Screen.MINDFUL -> GuidedPracticeScreen("Pausa de atención plena", "No necesitas dejar la mente en blanco.", listOf("Haz una pausa y nota dónde estás.", "Siente el contacto de tus pies con el suelo.", "Escucha tres sonidos, cercanos o lejanos.", "Observa un pensamiento como algo que pasa por tu mente.", "Elige una pequeña acción que te cuide ahora."), Modifier.padding(padding), onFinish = { screen = Screen.HOME })
                         Screen.GOALS -> GoalsScreen(userData.completedGoals, Modifier.padding(padding), { done -> persist(userData.copy(completedGoals = done)) })
                         Screen.RESOURCES -> ResourcesScreen(Modifier.padding(padding))
                         Screen.GROUNDING -> GroundingScreen(Modifier.padding(padding))
@@ -715,20 +715,21 @@ private fun SupportHubScreen(
 }
 
 @Composable
-private fun GuidedPracticeScreen(title: String, detail: String, steps: List<String>, modifier: Modifier) {
+private fun GuidedPracticeScreen(title: String, detail: String, steps: List<String>, modifier: Modifier, onFinish: () -> Unit) {
     var step by remember(title) { mutableStateOf(0) }
-    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         WelcomeBanner(title, detail)
-        Spacer(Modifier.height(20.dp))
-        Card(modifier.fillMaxWidth().weight(1f), shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = listOf(AnclaColors.TealTint, AnclaColors.PeachTint, AnclaColors.LilacTint, AnclaColors.GoldTint)[step % 4])) {
-            Box(Modifier.fillMaxSize().padding(26.dp), contentAlignment = Alignment.Center) { Text(steps[step], style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = AnclaColors.Ink, fontWeight = FontWeight.SemiBold) }
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = listOf(AnclaColors.TealTint, AnclaColors.PeachTint, AnclaColors.LilacTint, AnclaColors.GoldTint)[step % 4])) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 230.dp).padding(horizontal = 24.dp, vertical = 30.dp), contentAlignment = Alignment.Center) {
+                Text(steps[step], modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = AnclaColors.Ink, fontWeight = FontWeight.SemiBold)
+            }
         }
         Text("${step + 1} de ${steps.size}", color = AnclaColors.MutedInk)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = { if (step > 0) step-- }, enabled = step > 0) { Text("Atrás") }
             Button(onClick = { if (step < steps.lastIndex) step++ else step = 0 }) { Text(if (step < steps.lastIndex) "Siguiente" else "Empezar de nuevo") }
         }
-        TextButton(onClick = { step = steps.lastIndex }) { Text("Terminar aquí", color = AnclaColors.Teal) }
+        TextButton(onClick = onFinish) { Text("Terminar aquí", color = AnclaColors.Teal) }
     }
 }
 
