@@ -85,15 +85,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import com.ancla.safespace.data.local.SecureStore
@@ -110,7 +107,6 @@ import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
-import android.graphics.BitmapFactory
 
 private enum class Screen { ONBOARDING, HOME, MOOD, PROGRESS, JOURNAL, SUPPORT, BREATHING, GROUNDING, PLAN, MAP, RELAX, MINDFUL, GOALS, RESOURCES }
 
@@ -319,7 +315,7 @@ private fun OnboardingScreen(initial: UserData, modifier: Modifier, onContinue: 
         )
         Text("Empecemos por lo esencial", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         InfoCard("Tu espacio, a tu ritmo", "Tus datos se guardan cifrados en este dispositivo. Puedes cambiar estas opciones más adelante.", AnclaColors.TealTint, "✦")
-        MascotMessageCard("¡Hola! Soy Anclita", "Cuando elijas tu país, busco tu línea de apoyo. Mientras, practico una voltereta.", 1, 3)
+        MascotMessageCard("¡Hola! Soy Anclita", "Cuando elijas tu país, busco tu línea de apoyo. Mientras, practico una voltereta.", MascotMood.GREETING)
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
                 value = selected.country,
@@ -392,8 +388,11 @@ private fun HomeScreen(
         MascotMessageCard(
             title = when (moodToday?.mood) { "low", "very_low" -> "Me quedo aquí contigo."; "well" -> "¡Esa energía te sienta genial!"; else -> "Hola. Aquí tienes un ratito para ti." },
             detail = when (moodToday?.mood) { "low", "very_low" -> "No hace falta arreglarlo todo ahora. Un paso pequeño basta."; "well" -> "Celebremos lo pequeño, a tu manera."; else -> "Qué bueno que te hayas regalado este momento." },
-            primaryPose = if (moodToday?.mood == "low" || moodToday?.mood == "very_low") 2 else 0,
-            secondaryPose = if (moodToday?.mood == "low" || moodToday?.mood == "very_low") 1 else 3,
+            motion = when (moodToday?.mood) {
+                "low", "very_low" -> MascotMood.CALM
+                "well" -> MascotMood.JOYFUL
+                else -> MascotMood.GREETING
+            },
         )
         Text("¿Cómo te encuentras hoy?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text("Puedes expresarlo a tu ritmo, sin presiones.", color = AnclaColors.MutedInk)
@@ -1143,14 +1142,7 @@ private fun WelcomeBanner(title: String, detail: String) {
 }
 
 @Composable
-private fun MascotMessageCard(title: String, detail: String, primaryPose: Int, secondaryPose: Int) {
-    var pose by remember(primaryPose, secondaryPose) { mutableStateOf(primaryPose) }
-    LaunchedEffect(primaryPose, secondaryPose) {
-        while (true) {
-            delay(4_800)
-            pose = if (pose == primaryPose) secondaryPose else primaryPose
-        }
-    }
+private fun MascotMessageCard(title: String, detail: String, motion: MascotMood) {
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
         shape = RoundedCornerShape(24.dp),
@@ -1166,35 +1158,8 @@ private fun MascotMessageCard(title: String, detail: String, primaryPose: Int, s
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AnclaColors.Ink)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = AnclaColors.MutedInk)
             }
-            MascotSprite(pose, Modifier.size(116.dp))
+            AnclaMascot(motion, Modifier.size(116.dp))
         }
-    }
-}
-
-@Composable
-private fun MascotSprite(pose: Int, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val sprite = remember(context) {
-        BitmapFactory.decodeResource(context.resources, com.ancla.safespace.R.drawable.ancla_mascot_sheet).asImageBitmap()
-    }
-    val motion = rememberInfiniteTransition(label = "movimiento de Anclita")
-    val bounce by motion.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1_700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "rebote suave",
-    )
-    Canvas(modifier.graphicsLayer { translationY = -5.dp.toPx() * bounce; rotationZ = -1.5f + bounce * 3f }) {
-        val cellWidth = sprite.width / 2
-        val cellHeight = sprite.height / 2
-        val safePose = pose.coerceIn(0, 3)
-        drawImage(
-            image = sprite,
-            srcOffset = IntOffset((safePose % 2) * cellWidth, (safePose / 2) * cellHeight),
-            srcSize = IntSize(cellWidth, cellHeight),
-            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
-            filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
-        )
     }
 }
 
