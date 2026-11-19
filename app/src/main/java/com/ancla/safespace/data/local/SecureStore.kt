@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import java.security.KeyStore
+import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -37,7 +38,7 @@ data class MoodEntry(
 )
 
 data class JournalEntry(val id: String, val createdAt: Long, val prompt: String, val text: String)
-data class SupportContact(val name: String, val phone: String)
+data class SupportContact(val name: String, val phone: String, val isFavorite: Boolean = false, val id: String = "")
 
 /** Persiste solo un bloque cifrado con AES-GCM; la clave permanece en Android Keystore. */
 class SecureStore(private val context: Context) {
@@ -83,7 +84,12 @@ class SecureStore(private val context: Context) {
                 val item = array.optJSONObject(index) ?: continue
                 val name = item.optString("name", "").trim()
                 val phone = item.optString("phone", "").trim()
-                if (name.isNotBlank() && phone.isNotBlank()) add(SupportContact(name, phone))
+                if (name.isNotBlank() && phone.isNotBlank()) {
+                    val id = item.optString("id", "").ifBlank {
+                        UUID.nameUUIDFromBytes("$name\u0000$phone\u0000$index".toByteArray(Charsets.UTF_8)).toString()
+                    }
+                    add(SupportContact(name, phone, item.optBoolean("favorite", false), id))
+                }
             }
         }
         return UserData(
@@ -116,7 +122,9 @@ class SecureStore(private val context: Context) {
             data.journalEntries.forEach { put(JSONObject().put("id", it.id).put("createdAt", it.createdAt).put("prompt", it.prompt).put("text", it.text)) }
         }
         val supportContacts = org.json.JSONArray().apply {
-            data.supportContacts.forEach { put(JSONObject().put("name", it.name).put("phone", it.phone)) }
+            data.supportContacts.forEach {
+                put(JSONObject().put("id", it.id).put("name", it.name).put("phone", it.phone).put("favorite", it.isFavorite))
+            }
         }
         val completedGoals = org.json.JSONArray().apply { data.completedGoals.forEach { put(it) } }
         val json = JSONObject()

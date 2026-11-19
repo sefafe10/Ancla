@@ -142,27 +142,35 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
             MascotMood.JOYFUL -> -29f + waveAmount * 24f
             MascotMood.CALM -> 5f + waveAmount * 4f
         }
-        withTransform({ rotate(armBase, Offset(33f, 66f)) }) {
-            drawRoundRect(
-                Brush.linearGradient(listOf(Color(0xFF9BD8BC), Color(0xFF398875)), Offset(10f, 44f), Offset(35f, 89f)),
-                Offset(10f, 48f), Size(23f, 42f), androidx.compose.ui.geometry.CornerRadius(12f),
-            )
-            drawCircle(Color(0xFFB8E4CF), 3f, Offset(16f, 53f))
+        withTransform({ rotate(armBase, Offset(35f, 66f)) }) {
+            val leftFlipper = Path().apply {
+                moveTo(35f, 59f)
+                cubicTo(26f, 51f, 15f, 55f, 13f, 65f)
+                cubicTo(10f, 77f, 21f, 83f, 30f, 77f)
+                cubicTo(36f, 73f, 39f, 67f, 40f, 64f)
+                close()
+            }
+            drawPath(leftFlipper, Brush.linearGradient(listOf(Color(0xFF9BD8BC), Color(0xFF398875)), Offset(12f, 55f), Offset(39f, 80f)))
+            drawOval(Color(0xFFB8E4CF).copy(alpha = 0.7f), Offset(16f, 60f), Size(7f, 3f))
         }
-        withTransform({ rotate(-armBase * 0.48f + sway * 6f, Offset(95f, 66f)) }) {
-            drawRoundRect(
-                Brush.linearGradient(listOf(Color(0xFF5EAF91), Color(0xFF347E70)), Offset(93f, 45f), Offset(118f, 91f)),
-                Offset(95f, 49f), Size(23f, 42f), androidx.compose.ui.geometry.CornerRadius(12f),
-            )
-            drawCircle(Color(0xFFB8E4CF), 3f, Offset(112f, 54f))
+        withTransform({ rotate(-armBase * 0.48f + sway * 6f, Offset(93f, 66f)) }) {
+            val rightFlipper = Path().apply {
+                moveTo(93f, 59f)
+                cubicTo(102f, 51f, 113f, 55f, 115f, 65f)
+                cubicTo(118f, 77f, 107f, 83f, 98f, 77f)
+                cubicTo(92f, 73f, 89f, 67f, 88f, 64f)
+                close()
+            }
+            drawPath(rightFlipper, Brush.linearGradient(listOf(Color(0xFF5EAF91), Color(0xFF347E70)), Offset(90f, 55f), Offset(117f, 80f)))
+            drawOval(Color(0xFFB8E4CF).copy(alpha = 0.62f), Offset(105f, 60f), Size(7f, 3f))
         }
 
         val footKick = if (mood == MascotMood.CALM) footWave * 2f else footWave * 9f
         withTransform({ rotate(-footKick, Offset(49f, 101f)) }) {
-            drawRoundRect(Color(0xFF398775), Offset(38f, 95f - lift * 0.35f), Size(23f, 20f), androidx.compose.ui.geometry.CornerRadius(10f))
+            drawOval(Color(0xFF398775), Offset(39f, 98f - lift * 0.35f), Size(21f, 14f))
         }
         withTransform({ rotate(footKick, Offset(78f, 101f)) }) {
-            drawRoundRect(Color(0xFF398775), Offset(67f, 95f - lift * 0.35f), Size(23f, 20f), androidx.compose.ui.geometry.CornerRadius(10f))
+            drawOval(Color(0xFF398775), Offset(68f, 98f - lift * 0.35f), Size(21f, 14f))
         }
 
         drawOval(Color(0x20355F55), Offset(30f, 108f), Size(68f, 9f))
@@ -183,14 +191,24 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
             Offset(43f, 68f), Size(42f, 39f),
         )
 
-        withTransform({ rotate(sway * 3.5f + nudge.value * 8f, Offset(64f, 34f)) }) {
-            drawRoundRect(Color(0xFF397E70), Offset(61f, 18f), Size(6f, 19f), androidx.compose.ui.geometry.CornerRadius(3f))
-            drawLine(Color(0xFF397E70), Offset(64f, 29f), Offset(44f, 33f), strokeWidth = 5f, cap = StrokeCap.Round)
-            drawLine(Color(0xFF397E70), Offset(64f, 29f), Offset(84f, 33f), strokeWidth = 5f, cap = StrokeCap.Round)
-            drawArc(Color(0xFF397E70), 18f, 145f, false, Offset(43f, 26f), Size(25f, 17f), style = Stroke(5f, cap = StrokeCap.Round))
-            drawArc(Color(0xFF397E70), 17f, 145f, false, Offset(60f, 26f), Size(25f, 17f), style = Stroke(5f, cap = StrokeCap.Round))
-            drawCircle(Color(0xFF397E70), 10f, Offset(64f, 15f), style = Stroke(5f))
-            drawCircle(Color(0xFFFFF9F1), 3f, Offset(64f, 15f))
+        withTransform({ rotate(sway * 3.5f + nudge.value * 8f, Offset(64f, 43f)) }) {
+            val anchor = Color(0xFF397E70)
+            drawCircle(anchor, 8f, Offset(64f, 12f), style = Stroke(4f))
+            drawLine(anchor, Offset(64f, 20f), Offset(64f, 55f), strokeWidth = 4.5f, cap = StrokeCap.Round)
+            drawLine(anchor, Offset(47f, 34f), Offset(81f, 34f), strokeWidth = 4.5f, cap = StrokeCap.Round)
+            val flukes = Path().apply {
+                moveTo(64f, 51f)
+                cubicTo(63f, 62f, 55f, 67f, 46f, 60f)
+                cubicTo(41f, 56f, 38f, 51f, 37f, 45f)
+                moveTo(64f, 51f)
+                cubicTo(65f, 62f, 73f, 67f, 82f, 60f)
+                cubicTo(87f, 56f, 90f, 51f, 91f, 45f)
+            }
+            drawPath(flukes, anchor, style = Stroke(4.5f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            val leftTip = Path().apply { moveTo(37f, 45f); lineTo(29f, 42f); lineTo(34f, 51f); close() }
+            val rightTip = Path().apply { moveTo(91f, 45f); lineTo(99f, 42f); lineTo(94f, 51f); close() }
+            drawPath(leftTip, anchor)
+            drawPath(rightTip, anchor)
         }
 
         drawOval(Color(0x66F49F8C), Offset(34f, 69f), Size(13f, 8f))

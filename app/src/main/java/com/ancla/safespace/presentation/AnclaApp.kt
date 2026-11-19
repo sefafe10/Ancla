@@ -468,11 +468,10 @@ private fun CrisisDialog(userData: UserData, contacts: List<SupportContact>, onD
                 if (contacts.isNotEmpty()) {
                     HorizontalDivider()
                     Text("Personas de confianza", fontWeight = FontWeight.SemiBold)
-                    contacts.forEach { contact ->
+                    contacts.sortedByDescending { it.isFavorite }.forEach { contact ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(contact.name, Modifier.weight(1f))
+                            Text(if (contact.isFavorite) "★ ${contact.name}" else contact.name, Modifier.weight(1f))
                             TextButton(onClick = { dial(context, contact.phone) }) { Text("Llamar") }
-                            TextButton(onClick = { shareSupportMessage(context) }) { Text("Compartir") }
                         }
                     }
                 }
@@ -643,7 +642,8 @@ private fun SupportHubScreen(
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf("") }; var phone by remember { mutableStateOf("") }
-    var editIndex by remember { mutableStateOf<Int?>(null) }
+    var markFavorite by remember { mutableStateOf(false) }
+    var editingContactId by remember { mutableStateOf<String?>(null) }
     Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         WelcomeBanner("Mi red de apoyo", "Personas y recursos que puedes elegir contactar.")
         Text("Contactos de confianza", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -652,24 +652,51 @@ private fun SupportHubScreen(
             OutlinedTextField(name, { name = it }, modifier = Modifier.weight(1f), label = { Text("Nombre") }, singleLine = true)
             OutlinedTextField(phone, { phone = it }, modifier = Modifier.weight(1f), label = { Text("Teléfono") }, singleLine = true)
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = markFavorite, onCheckedChange = { markFavorite = it })
+            Text("Marcar como favorito", color = AnclaColors.Ink)
+        }
         Button(onClick = {
-            val updated = contacts.toMutableList()
-            val item = SupportContact(name.trim(), phone.trim())
-            if (name.isNotBlank() && phone.isNotBlank()) { if (editIndex == null) updated.add(item) else updated[editIndex!!] = item; onSaveContact(updated); name = ""; phone = ""; editIndex = null }
-        }, enabled = name.isNotBlank() && phone.isNotBlank(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (editIndex == null) "Añadir contacto" else "Guardar cambios") }
-        contacts.forEachIndexed { index, contact ->
-            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            val targetId = editingContactId
+            if (name.isNotBlank() && phone.isNotBlank()) {
+                val updated = if (targetId == null) {
+                    contacts + SupportContact(name.trim(), phone.trim(), markFavorite, UUID.randomUUID().toString())
+                } else {
+                    contacts.map { contact ->
+                        if (contact.id == targetId) contact.copy(name = name.trim(), phone = phone.trim(), isFavorite = markFavorite) else contact
+                    }
+                }
+                onSaveContact(updated)
+                name = ""
+                phone = ""
+                markFavorite = false
+                editingContactId = null
+            }
+        }, enabled = name.isNotBlank() && phone.isNotBlank(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (editingContactId == null) "Añadir contacto" else "Guardar cambios") }
+        val sortedContacts = contacts.sortedWith(compareByDescending<SupportContact> { it.isFavorite }.thenBy { it.name.lowercase() })
+        sortedContacts.forEach { contact ->
+            val favoriteTint = Color(0xFFEAF4EE)
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = if (contact.isFavorite) favoriteTint else Color.White),
+                border = if (contact.isFavorite) BorderStroke(1.dp, AnclaColors.TealTint) else null,
+            ) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text(contact.name, fontWeight = FontWeight.Bold); Text(contact.phone, color = AnclaColors.MutedInk)
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { dial(context, contact.phone) }, modifier = Modifier.weight(1f)) { Text("Llamar", maxLines = 1) }
-                            OutlinedButton(onClick = { shareSupportMessage(context) }, modifier = Modifier.weight(1f)) { Text("Compartir mensaje", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(contact.name, fontWeight = FontWeight.Bold)
+                            Text(contact.phone, color = AnclaColors.MutedInk)
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { name = contact.name; phone = contact.phone; editIndex = index }) { Text("Editar") }
-                            TextButton(onClick = { onSaveContact(contacts.filterIndexed { i, _ -> i != index }) }) { Text("Quitar", color = AnclaColors.Rose, maxLines = 1, softWrap = false) }
+                        TextButton(onClick = {
+                            onSaveContact(contacts.map { current -> if (current.id == contact.id) current.copy(isFavorite = !current.isFavorite) else current })
+                        }) {
+                            Text(if (contact.isFavorite) "★ Favorito" else "☆ Favorito", color = if (contact.isFavorite) AnclaColors.Teal else AnclaColors.MutedInk, maxLines = 1, softWrap = false)
                         }
+                    }
+                    OutlinedButton(onClick = { dial(context, contact.phone) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("Llamar", maxLines = 1) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { name = contact.name; phone = contact.phone; markFavorite = contact.isFavorite; editingContactId = contact.id }, modifier = Modifier.weight(1f)) { Text("Editar", maxLines = 1) }
+                        TextButton(onClick = { onSaveContact(contacts.filterNot { it.id == contact.id }) }, modifier = Modifier.weight(1f)) { Text("Quitar", color = AnclaColors.Rose, maxLines = 1, softWrap = false) }
                     }
                 }
             }
@@ -1161,14 +1188,6 @@ private fun MascotMessageCard(title: String, detail: String, motion: MascotMood)
             AnclaMascot(motion, Modifier.size(116.dp))
         }
     }
-}
-
-private fun shareSupportMessage(context: android.content.Context) {
-    val share = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, "Hola, ¿puedes hablar conmigo un momento? No me encuentro bien y me ayudaría tener compañía.")
-    }
-    runCatching { context.startActivity(Intent.createChooser(share, "Elige cómo compartir el mensaje")) }
 }
 
 @Composable
