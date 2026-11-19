@@ -31,9 +31,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +64,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -92,14 +95,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import com.ancla.safespace.data.local.SecureStore
 import com.ancla.safespace.data.local.UserData
+import com.ancla.safespace.data.local.MoodEntry
+import com.ancla.safespace.data.local.JournalEntry
+import com.ancla.safespace.data.local.SupportContact
 import com.ancla.safespace.domain.model.EmergencyHotlines
 import com.ancla.safespace.presentation.theme.AnclaColors
 import com.ancla.safespace.presentation.theme.AnclaTheme
 import com.ancla.safespace.presentation.places.SupportMapScreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.UUID
 
-private enum class Screen { ONBOARDING, HOME, BREATHING, GROUNDING, PLAN, MAP }
+private enum class Screen { ONBOARDING, HOME, MOOD, PROGRESS, JOURNAL, SUPPORT, BREATHING, GROUNDING, PLAN, MAP, RELAX, MINDFUL, GOALS, RESOURCES }
 
 private data class SafetyPlanPrompt(val title: String, val question: String, val hint: String)
 private data class ShareablePlanSection(val number: Int, val title: String, val content: String)
@@ -124,6 +133,7 @@ fun AnclaApp() {
     var loaded by remember { mutableStateOf(false) }
     var showCrisis by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
+    var selectedMoodDraft by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(store) {
         runCatching { store.load() }
@@ -148,6 +158,20 @@ fun AnclaApp() {
         } else {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
+                bottomBar = {
+                    if (screen !in listOf(Screen.ONBOARDING, Screen.MOOD, Screen.BREATHING, Screen.GROUNDING, Screen.RELAX, Screen.MINDFUL, Screen.PLAN, Screen.MAP, Screen.GOALS, Screen.RESOURCES)) {
+                        Row(Modifier.fillMaxWidth().background(Color.White).padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                            listOf(Screen.HOME to "Inicio", Screen.PROGRESS to "Progreso", Screen.JOURNAL to "Diario", Screen.SUPPORT to "Apoyo").forEach { (destination, label) ->
+                                TextButton(onClick = { screen = destination }) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(when (destination) { Screen.HOME -> "⌂"; Screen.PROGRESS -> "▥"; Screen.JOURNAL -> "✎"; else -> "♡" }, fontSize = 19.sp, color = if (screen == destination) AnclaColors.Teal else AnclaColors.MutedInk)
+                                        Text(label, style = MaterialTheme.typography.labelSmall, color = if (screen == destination) AnclaColors.Teal else AnclaColors.MutedInk)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 topBar = {
                     TopAppBar(
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -207,8 +231,37 @@ fun AnclaApp() {
                             onGrounding = { screen = Screen.GROUNDING },
                             onPlan = { screen = Screen.PLAN },
                             onMap = { screen = Screen.MAP },
+                            moodToday = userData.moodEntries.find { it.day == LocalDate.now().toEpochDay() },
+                            onMood = { mood -> selectedMoodDraft = mood; screen = Screen.MOOD },
                         )
                         Screen.BREATHING -> BreathingScreen(Modifier.padding(padding))
+                        Screen.MOOD -> MoodCheckInScreen(
+                            initial = userData.moodEntries.find { it.day == LocalDate.now().toEpochDay() },
+                            preferredMood = selectedMoodDraft,
+                            modifier = Modifier.padding(padding),
+                            onSave = { entry ->
+                                selectedMoodDraft = null
+                                persist(userData.copy(moodEntries = (userData.moodEntries.filterNot { it.day == entry.day } + entry).sortedBy { it.day }), Screen.HOME)
+                            },
+                        )
+                        Screen.PROGRESS -> MoodProgressScreen(userData.moodEntries, Modifier.padding(padding))
+                        Screen.JOURNAL -> JournalScreen(
+                            entries = userData.journalEntries,
+                            modifier = Modifier.padding(padding),
+                            onSave = { entry -> persist(userData.copy(journalEntries = listOf(entry) + userData.journalEntries), Screen.JOURNAL) },
+                            onDelete = { entry -> persist(userData.copy(journalEntries = userData.journalEntries - entry)) },
+                        )
+                        Screen.SUPPORT -> SupportHubScreen(
+                            contacts = userData.supportContacts, modifier = Modifier.padding(padding),
+                            onPlan = { screen = Screen.PLAN }, onMap = { screen = Screen.MAP }, onBreathing = { screen = Screen.BREATHING },
+                            onGrounding = { screen = Screen.GROUNDING }, onRelax = { screen = Screen.RELAX }, onMindful = { screen = Screen.MINDFUL },
+                            onGoals = { screen = Screen.GOALS }, onResources = { screen = Screen.RESOURCES },
+                            onSaveContact = { updated -> persist(userData.copy(supportContacts = updated)) },
+                        )
+                        Screen.RELAX -> GuidedPracticeScreen("Relajación muscular suave", "Puedes saltarte cualquier zona y parar si algo te incomoda.", listOf("Acomódate y nota el apoyo de tu cuerpo.", "Tensa suavemente las manos durante unos segundos; después suéltalas.", "Sube los hombros con suavidad y deja que bajen.", "Aprieta ligeramente los pies y relájalos.", "Observa cómo te sientes ahora, sin tener que cambiar nada."), Modifier.padding(padding))
+                        Screen.MINDFUL -> GuidedPracticeScreen("Pausa de atención plena", "No necesitas dejar la mente en blanco.", listOf("Haz una pausa y nota dónde estás.", "Siente el contacto de tus pies con el suelo.", "Escucha tres sonidos, cercanos o lejanos.", "Observa un pensamiento como algo que pasa por tu mente.", "Elige una pequeña acción que te cuide ahora."), Modifier.padding(padding))
+                        Screen.GOALS -> GoalsScreen(userData.completedGoals, Modifier.padding(padding), { done -> persist(userData.copy(completedGoals = done)) })
+                        Screen.RESOURCES -> ResourcesScreen(Modifier.padding(padding))
                         Screen.GROUNDING -> GroundingScreen(Modifier.padding(padding))
                         Screen.PLAN -> SafetyPlanScreen(
                             initial = userData.safetyPlan,
@@ -230,6 +283,7 @@ fun AnclaApp() {
             if (showCrisis) {
                 CrisisDialog(
                     userData = userData,
+                    contacts = userData.supportContacts,
                     onDismiss = { showCrisis = false },
                     onOpenPlan = { showCrisis = false; screen = Screen.PLAN },
                 )
@@ -305,7 +359,7 @@ private fun OnboardingScreen(initial: UserData, modifier: Modifier, onContinue: 
         Button(
             onClick = {
                 if (isCustom && (customNumber.isBlank() || customEmergency.isBlank())) inputError = true
-                else onContinue(UserData(selectedCode, customNumber.trim(), customEmergency.trim(), initial.safetyPlan))
+                else onContinue(initial.copy(countryCode = selectedCode, customNumber = customNumber.trim(), customEmergencyNumber = customEmergency.trim()))
             },
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(18.dp),
@@ -321,6 +375,8 @@ private fun HomeScreen(
     onGrounding: () -> Unit,
     onPlan: () -> Unit,
     onMap: () -> Unit,
+    moodToday: MoodEntry?,
+    onMood: (String?) -> Unit,
 ) {
     Column(
         modifier.fillMaxSize().background(
@@ -329,6 +385,29 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(15.dp),
     ) {
         WelcomeBanner("Hola. Estás aquí, ahora.", "Qué bueno que te hayas dado este momento.")
+        Text("¿Cómo te encuentras hoy?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Puedes expresarlo a tu ritmo, sin presiones.", color = AnclaColors.MutedInk)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Bien" to "🙂", "Regular" to "😐", "Mal" to "😞", "Muy mal" to "😣").forEachIndexed { index, item ->
+                val moodCode = listOf("well", "okay", "low", "very_low")[index]
+                val selected = moodToday?.mood == moodCode
+                Card(
+                    onClick = { onMood(moodCode) },
+                    modifier = Modifier.weight(1f).height(76.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (selected) AnclaColors.TealTint else Color.White),
+                    border = if (selected) BorderStroke(1.dp, AnclaColors.Teal) else null,
+                ) {
+                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Text(item.second, fontSize = 24.sp)
+                        Text(item.first, style = MaterialTheme.typography.labelMedium, color = AnclaColors.Ink)
+                    }
+                }
+            }
+        }
+        OutlinedButton(onClick = { onMood(null) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+            Text(if (moodToday == null) "Registrar cómo me siento" else "Actualizar registro de hoy", color = AnclaColors.Teal)
+        }
         Text("¿Qué necesitas hoy?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         StaggeredEntry(0) {
             Button(
@@ -363,7 +442,7 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun CrisisDialog(userData: UserData, onDismiss: () -> Unit, onOpenPlan: () -> Unit) {
+private fun CrisisDialog(userData: UserData, contacts: List<SupportContact>, onDismiss: () -> Unit, onOpenPlan: () -> Unit) {
     val context = LocalContext.current
     val selected = EmergencyHotlines.countries.find { it.code == userData.countryCode }
     val hotlineNumber = if (selected == null) userData.customNumber else selected.number
@@ -377,6 +456,20 @@ private fun CrisisDialog(userData: UserData, onDismiss: () -> Unit, onOpenPlan: 
                 Text("Emergencias: $emergencyNumber", fontWeight = FontWeight.SemiBold)
                 Text("Línea de apoyo: $hotlineNumber", fontWeight = FontWeight.SemiBold)
                 if (selected?.sourceUrl?.isNotBlank() == true) Text("Servicio nacional de ${selected.country}", style = MaterialTheme.typography.bodySmall)
+                if (contacts.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("Personas de confianza", fontWeight = FontWeight.SemiBold)
+                    contacts.forEach { contact ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(contact.name, Modifier.weight(1f))
+                            TextButton(onClick = { dial(context, contact.phone) }) { Text("Llamar") }
+                            TextButton(onClick = {
+                                val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(contact.phone)}")).putExtra("sms_body", "Hola, ¿puedes hablar conmigo un momento? No me encuentro bien y me ayudaría tener compañía.")
+                                runCatching { context.startActivity(intent) }
+                            }) { Text("Mensaje") }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -388,6 +481,257 @@ private fun CrisisDialog(userData: UserData, onDismiss: () -> Unit, onOpenPlan: 
             }
         },
     )
+}
+
+@Composable
+private fun MoodCheckInScreen(initial: MoodEntry?, preferredMood: String?, modifier: Modifier, onSave: (MoodEntry) -> Unit) {
+    var mood by remember(initial, preferredMood) { mutableStateOf(preferredMood ?: initial?.mood ?: "okay") }
+    var distress by remember(initial) { mutableStateOf((initial?.distress ?: 4).toFloat()) }
+    var anxiety by remember(initial) { mutableStateOf((initial?.anxiety ?: 4).toFloat()) }
+    var note by remember(initial) { mutableStateOf(initial?.note.orEmpty()) }
+    val choices = listOf("well" to "🙂 Bien", "okay" to "😐 Regular", "low" to "😞 Mal", "very_low" to "😣 Muy mal")
+    Column(
+        modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AnclaColors.Canvas, Color(0xFFFFF2E7)))).verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        WelcomeBanner("Un momento para escucharte", "No hay respuestas buenas o malas. Registra solo lo que te apetezca.")
+        Text("¿Cómo te sientes?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            choices.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    row.forEach { (code, label) ->
+                        val chosen = mood == code
+                        Card(
+                            onClick = { mood = code }, modifier = Modifier.weight(1f).height(58.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = if (chosen) AnclaColors.TealTint else Color.White),
+                            border = if (chosen) BorderStroke(1.dp, AnclaColors.Teal) else null,
+                        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal) } }
+                    }
+                }
+            }
+        }
+        MoodSlider("Intensidad del malestar", distress) { distress = it }
+        MoodSlider("Ansiedad", anxiety) { anxiety = it }
+        OutlinedTextField(
+            value = note, onValueChange = { note = it.take(500) }, label = { Text("Una nota para ti (opcional)") },
+            supportingText = { Text("Se guarda cifrada en este dispositivo.") }, modifier = Modifier.fillMaxWidth(), minLines = 3,
+            shape = RoundedCornerShape(18.dp),
+        )
+        Button(onClick = { onSave(MoodEntry(LocalDate.now().toEpochDay(), mood, distress.toInt(), anxiety.toInt(), note.trim())) }, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) {
+            Text("Guardar registro")
+        }
+        Text("Un día difícil no es una nota ni una penalización. Este registro sirve solo para observarte con amabilidad.", color = AnclaColors.MutedInk, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun MoodSlider(label: String, value: Float, onValueChange: (Float) -> Unit) {
+    Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(label, fontWeight = FontWeight.SemiBold)
+                Text("${value.toInt()} / 10", color = AnclaColors.Teal, fontWeight = FontWeight.Bold)
+            }
+            Slider(value = value, onValueChange = onValueChange, valueRange = 1f..10f, steps = 8)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Suave", style = MaterialTheme.typography.labelSmall, color = AnclaColors.MutedInk)
+                Text("Intenso", style = MaterialTheme.typography.labelSmall, color = AnclaColors.MutedInk)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoodProgressScreen(entries: List<MoodEntry>, modifier: Modifier) {
+    var monthly by remember { mutableStateOf(false) }
+    val today = LocalDate.now().toEpochDay()
+    val period = if (monthly) 30 else 7
+    val filtered = entries.filter { it.day in (today - period + 1)..today }
+    val values = (today - period + 1..today).map { day -> filtered.find { it.day == day } }
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        WelcomeBanner("Tu evolución", "Un espacio para observar, sin juicios ni puntuaciones.")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChipLike("7 días", !monthly) { monthly = false }
+            FilterChipLike("30 días", monthly) { monthly = true }
+        }
+        Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Intensidad que registraste", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Cada punto refleja solo lo que decidiste anotar. Los huecos no significan nada malo.", color = AnclaColors.MutedInk, style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(if (monthly) 2.dp else 8.dp), verticalAlignment = Alignment.Bottom) {
+                    values.forEach { entry ->
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (entry != null) {
+                                Row(Modifier.fillMaxWidth().height(110.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+                                    Box(Modifier.weight(1f).height((entry.distress * 10).dp).clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp)).background(AnclaColors.Teal))
+                                    Spacer(Modifier.width(2.dp))
+                                    Box(Modifier.weight(1f).height((entry.anxiety * 10).dp).clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp)).background(AnclaColors.Peach))
+                                }
+                            } else Spacer(Modifier.weight(1f))
+                            Spacer(Modifier.height(5.dp))
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(AnclaColors.TealTint))
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("● Malestar", color = AnclaColors.Teal, style = MaterialTheme.typography.labelSmall)
+                    Text("● Ansiedad", color = AnclaColors.Peach, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        val average = filtered.takeIf { it.isNotEmpty() }?.map { it.anxiety }.orEmpty()
+        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = AnclaColors.TealTint)) {
+            Text(if (average.isEmpty()) "Aún no hay registros en este periodo. Puedes empezar cuando te apetezca." else "Has anotado ${filtered.size} ${if (filtered.size == 1) "día" else "días"} en este periodo. No hace falta registrar todos los días.", Modifier.padding(18.dp), color = AnclaColors.Ink)
+        }
+    }
+}
+
+@Composable
+private fun FilterChipLike(label: String, selected: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+@Composable
+private fun JournalScreen(entries: List<JournalEntry>, modifier: Modifier, onSave: (JournalEntry) -> Unit, onDelete: (JournalEntry) -> Unit) {
+    val context = LocalContext.current
+    var prompt by remember { mutableStateOf("¿Qué te gustaría que alguien comprendiera de este día?") }
+    var text by remember { mutableStateOf("") }
+    var confirmDelete by remember { mutableStateOf<JournalEntry?>(null) }
+    val prompts = listOf("¿Qué te gustaría que alguien comprendiera de este día?", "¿Qué momento fue difícil y qué te ayudó a atravesarlo?", "¿Qué necesitas ahora mismo, aunque sea algo pequeño?", "¿Qué le dirías con amabilidad a alguien en tu situación?")
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        WelcomeBanner("Diario privado", "Escribe para ti. Tus entradas se guardan cifradas en este dispositivo.")
+        Text("Una pregunta para empezar", fontWeight = FontWeight.SemiBold)
+        TextButton(onClick = { prompt = prompts[(prompts.indexOf(prompt) + 1) % prompts.size] }) { Text("↻  Cambiar pregunta", color = AnclaColors.Teal) }
+        Text(prompt, color = AnclaColors.MutedInk)
+        OutlinedTextField(text, { text = it.take(5000) }, modifier = Modifier.fillMaxWidth(), minLines = 5, label = { Text("Escribe lo que quieras") }, shape = RoundedCornerShape(18.dp))
+        Button(onClick = { if (text.isNotBlank()) { onSave(JournalEntry(UUID.randomUUID().toString(), System.currentTimeMillis(), prompt, text.trim())); text = "" } }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(18.dp)) { Text("Guardar en mi diario") }
+        HorizontalDivider()
+        Text("Tus entradas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        if (entries.isEmpty()) Text("Todavía no hay entradas. Puedes volver cuando quieras.", color = AnclaColors.MutedInk)
+        entries.sortedByDescending { it.createdAt }.forEach { entry ->
+            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(DateTimeFormatter.ofPattern("d MMM yyyy · HH:mm").format(java.time.Instant.ofEpochMilli(entry.createdAt).atZone(java.time.ZoneId.systemDefault())), style = MaterialTheme.typography.labelMedium, color = AnclaColors.Teal)
+                    Text(entry.prompt, fontWeight = FontWeight.SemiBold)
+                    Text(entry.text, maxLines = 5, overflow = TextOverflow.Ellipsis)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            val share = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, "Una entrada de mi diario de Ancla"); putExtra(Intent.EXTRA_TEXT, "${entry.prompt}\n\n${entry.text}") }
+                            context.startActivity(Intent.createChooser(share, "Exportar entrada"))
+                        }) { Text("Exportar") }
+                        TextButton(onClick = { confirmDelete = entry }) { Text("Eliminar", color = AnclaColors.Rose) }
+                    }
+                }
+            }
+        }
+    }
+    confirmDelete?.let { entry -> AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text("¿Eliminar esta entrada?") }, text = { Text("Se quitará de este dispositivo.") }, confirmButton = { TextButton(onClick = { onDelete(entry); confirmDelete = null }) { Text("Eliminar") } }, dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancelar") } }) }
+}
+
+@Composable
+private fun SupportHubScreen(
+    contacts: List<SupportContact>, modifier: Modifier, onPlan: () -> Unit, onMap: () -> Unit,
+    onBreathing: () -> Unit, onGrounding: () -> Unit, onRelax: () -> Unit, onMindful: () -> Unit,
+    onGoals: () -> Unit, onResources: () -> Unit, onSaveContact: (List<SupportContact>) -> Unit,
+) {
+    val context = LocalContext.current
+    var name by remember { mutableStateOf("") }; var phone by remember { mutableStateOf("") }
+    var editIndex by remember { mutableStateOf<Int?>(null) }
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+        WelcomeBanner("Mi red de apoyo", "Personas y recursos que puedes elegir contactar.")
+        Text("Contactos de confianza", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Se guardan cifrados. Ancla nunca envía alertas ni mensajes automáticamente.", color = AnclaColors.MutedInk, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(name, { name = it }, modifier = Modifier.weight(1f), label = { Text("Nombre") }, singleLine = true)
+            OutlinedTextField(phone, { phone = it }, modifier = Modifier.weight(1f), label = { Text("Teléfono") }, singleLine = true)
+        }
+        Button(onClick = {
+            val updated = contacts.toMutableList()
+            val item = SupportContact(name.trim(), phone.trim())
+            if (name.isNotBlank() && phone.isNotBlank()) { if (editIndex == null) updated.add(item) else updated[editIndex!!] = item; onSaveContact(updated); name = ""; phone = ""; editIndex = null }
+        }, enabled = name.isNotBlank() && phone.isNotBlank(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (editIndex == null) "Añadir contacto" else "Guardar cambios") }
+        contacts.forEachIndexed { index, contact ->
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text(contact.name, fontWeight = FontWeight.Bold); Text(contact.phone, color = AnclaColors.MutedInk)
+                    Row {
+                        TextButton(onClick = { dial(context, contact.phone) }) { Text("Llamar") }
+                        TextButton(onClick = {
+                            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(contact.phone)}")).putExtra("sms_body", "Hola, ¿puedes hablar conmigo un momento? No me encuentro bien y me ayudaría tener compañía.")
+                            runCatching { context.startActivity(intent) }
+                        }) { Text("Preparar mensaje") }
+                        TextButton(onClick = { name = contact.name; phone = contact.phone; editIndex = index }) { Text("Editar") }
+                        TextButton(onClick = { onSaveContact(contacts.filterIndexed { i, _ -> i != index }) }) { Text("Quitar", color = AnclaColors.Rose) }
+                    }
+                }
+            }
+        }
+        HorizontalDivider()
+        Text("Herramientas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        ActionCard("Mi plan de seguridad", "Tus pasos y apoyos, disponibles sin conexión.", "♡", AnclaColors.LilacTint, AnclaColors.Lilac, onPlan)
+        ActionCard("Buscar ayuda cercana", "Centros y profesionales en tu zona.", "⌖", AnclaColors.GoldTint, Color(0xFF9B772F), onMap)
+        ActionCard("Ejercicios de regulación", "Respiración, sentidos y otras pausas.", "◌", AnclaColors.TealTint, AnclaColors.Teal, onBreathing)
+        ActionCard("Grounding 5–4–3–2–1", "Volver a tus sentidos con calma.", "✿", AnclaColors.PeachTint, Color(0xFF9B5C3D), onGrounding)
+        ActionCard("Relajación muscular", "Soltar algunas zonas suavemente.", "☁", AnclaColors.TealTint, AnclaColors.Teal, onRelax)
+        ActionCard("Pausa de atención plena", "Un ejercicio breve y flexible.", "◉", AnclaColors.LilacTint, AnclaColors.Lilac, onMindful)
+        ActionCard("Pequeños pasos", "Ideas voluntarias, sin rachas.", "☀", AnclaColors.GoldTint, Color(0xFF9B772F), onGoals)
+        ActionCard("Biblioteca de recursos", "Información y enlaces de fuentes públicas.", "▤", AnclaColors.PeachTint, Color(0xFF9B5C3D), onResources)
+    }
+}
+
+@Composable
+private fun GuidedPracticeScreen(title: String, detail: String, steps: List<String>, modifier: Modifier) {
+    var step by remember(title) { mutableStateOf(0) }
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        WelcomeBanner(title, detail)
+        Spacer(Modifier.height(20.dp))
+        Card(modifier.fillMaxWidth().weight(1f), shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = listOf(AnclaColors.TealTint, AnclaColors.PeachTint, AnclaColors.LilacTint, AnclaColors.GoldTint)[step % 4])) {
+            Box(Modifier.fillMaxSize().padding(26.dp), contentAlignment = Alignment.Center) { Text(steps[step], style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, color = AnclaColors.Ink, fontWeight = FontWeight.SemiBold) }
+        }
+        Text("${step + 1} de ${steps.size}", color = AnclaColors.MutedInk)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { if (step > 0) step-- }, enabled = step > 0) { Text("Atrás") }
+            Button(onClick = { if (step < steps.lastIndex) step++ else step = 0 }) { Text(if (step < steps.lastIndex) "Siguiente" else "Empezar de nuevo") }
+        }
+        TextButton(onClick = { step = steps.lastIndex }) { Text("Terminar aquí", color = AnclaColors.Teal) }
+    }
+}
+
+@Composable
+private fun GoalsScreen(done: List<String>, modifier: Modifier, onChange: (List<String>) -> Unit) {
+    val options = listOf("Tomar un vaso de agua", "Salir un momento o abrir la ventana", "Escribir o hablar con alguien", "Descansar sin exigirme", "Hacer algo que me resulte agradable")
+    val today = LocalDate.now().toString()
+    val completed = done.filter { it.startsWith("$today|") }.map { it.substringAfter('|') }.toSet()
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        WelcomeBanner("Un paso pequeño", "Son ideas opcionales. Puedes elegir ninguna, una o varias.")
+        options.forEach { option ->
+            val checked = option in completed
+            Card(onClick = { val next = if (checked) completed - option else completed + option; onChange(done.filterNot { it.startsWith("$today|") } + next.map { "$today|$it" }) }, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = if (checked) AnclaColors.TealTint else Color.White)) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, onCheckedChange = null); Text(option, Modifier.padding(start = 10.dp)) }
+            }
+        }
+        Text("No hay rachas ni penalizaciones. Si hoy no puedes, está bien.", color = AnclaColors.MutedInk)
+    }
+}
+
+@Composable
+private fun ResourcesScreen(modifier: Modifier) {
+    val context = LocalContext.current
+    val resources = listOf(
+        Triple("En tiempos de estrés", "Guía de la OMS con técnicas prácticas de anclaje y acciones basadas en valores.", "https://www.who.int/es/publications/b/53604"),
+        Triple("Depresión", "Información de la OMS sobre síntomas, apoyo y opciones de atención.", "https://www.who.int/es/news-room/fact-sheets/detail/depression/"),
+        Triple("Respiración para el estrés", "Ejercicio de respiración calmada del NHS. No fuerces el ritmo.", "https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/"),
+        Triple("Línea 024", "Atención en España para personas con pensamientos o riesgo suicida y sus allegados. Si hay una emergencia inmediata, llama al 112.", "https://www.sanidad.gob.es/linea024/home.htm"),
+    )
+    Column(modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        WelcomeBanner("Recursos para comprender", "Información educativa de fuentes públicas. No sustituye atención profesional y no ha sido revisada clínicamente para esta app.")
+        resources.forEach { (title, description, url) ->
+            Card(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AnclaColors.Teal); Text(description); Text("Abrir fuente oficial ↗", style = MaterialTheme.typography.labelLarge, color = AnclaColors.Teal) }
+            }
+        }
+    }
 }
 
 private fun dial(context: android.content.Context, number: String) {
