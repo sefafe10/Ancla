@@ -8,8 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,8 +28,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -104,7 +105,6 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
     }
     var playfulNudge by remember { mutableStateOf(0) }
     val nudge = remember { Animatable(0f) }
-    val interactionSource = remember { MutableInteractionSource() }
     LaunchedEffect(playfulNudge) {
         if (playfulNudge > 0) {
             nudge.snapTo(0f)
@@ -121,13 +121,12 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
             .semantics {
                 contentDescription = "Anclita, toca para verla hacer un bailecito"
                 role = Role.Button
+                onClick(label = "Hacer bailar a Anclita") {
+                    playfulNudge++
+                    true
+                }
             }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClickLabel = "Hacer bailar a Anclita",
-                role = Role.Button,
-            ) { playfulNudge++ },
+            .pointerInput(Unit) { detectTapGestures { playfulNudge++ } },
     ) {
         val unit = size.minDimension / 128f
         val moodLift = when (mood) {
@@ -198,22 +197,22 @@ internal fun AnclaMascot(mood: MascotMood, modifier: Modifier = Modifier) {
             Offset(43f, 68f), Size(42f, 39f),
         )
 
-        withTransform({ rotate(sway * 3.5f + nudge.value * 8f, Offset(64f, 43f)) }) {
+        withTransform({ rotate(sway * 0.8f + nudge.value * 2f, Offset(64f, 39f)) }) {
             val anchor = Color(0xFF397E70)
-            drawCircle(anchor, 8f, Offset(64f, 12f), style = Stroke(4f))
-            drawLine(anchor, Offset(64f, 20f), Offset(64f, 55f), strokeWidth = 4.5f, cap = StrokeCap.Round)
-            drawLine(anchor, Offset(47f, 34f), Offset(81f, 34f), strokeWidth = 4.5f, cap = StrokeCap.Round)
+            drawCircle(anchor, 2.5f, Offset(64f, 31f), style = Stroke(1.7f))
+            drawLine(anchor, Offset(64f, 33.5f), Offset(64f, 41f), strokeWidth = 1.8f, cap = StrokeCap.Round)
+            drawLine(anchor, Offset(59.5f, 36.5f), Offset(68.5f, 36.5f), strokeWidth = 1.8f, cap = StrokeCap.Round)
             val flukes = Path().apply {
-                moveTo(64f, 51f)
-                cubicTo(63f, 62f, 55f, 67f, 46f, 60f)
-                cubicTo(41f, 56f, 38f, 51f, 37f, 45f)
-                moveTo(64f, 51f)
-                cubicTo(65f, 62f, 73f, 67f, 82f, 60f)
-                cubicTo(87f, 56f, 90f, 51f, 91f, 45f)
+                moveTo(64f, 39f)
+                cubicTo(63f, 43f, 60f, 45f, 57f, 42f)
+                lineTo(56f, 40f)
+                moveTo(64f, 39f)
+                cubicTo(65f, 43f, 68f, 45f, 71f, 42f)
+                lineTo(72f, 40f)
             }
-            drawPath(flukes, anchor, style = Stroke(4.5f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-            val leftTip = Path().apply { moveTo(37f, 45f); lineTo(29f, 42f); lineTo(34f, 51f); close() }
-            val rightTip = Path().apply { moveTo(91f, 45f); lineTo(99f, 42f); lineTo(94f, 51f); close() }
+            drawPath(flukes, anchor, style = Stroke(1.8f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            val leftTip = Path().apply { moveTo(56f, 40f); lineTo(53.5f, 38.5f); lineTo(54f, 43f); close() }
+            val rightTip = Path().apply { moveTo(72f, 40f); lineTo(74.5f, 38.5f); lineTo(74f, 43f); close() }
             drawPath(leftTip, anchor)
             drawPath(rightTip, anchor)
         }
