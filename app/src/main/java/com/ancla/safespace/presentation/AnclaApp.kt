@@ -33,9 +33,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +52,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,11 +80,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
@@ -96,9 +101,16 @@ import kotlinx.coroutines.delay
 
 private enum class Screen { ONBOARDING, HOME, BREATHING, GROUNDING, PLAN, MAP }
 
+private data class SafetyPlanPrompt(val title: String, val question: String, val hint: String)
+private data class ShareablePlanSection(val number: Int, val title: String, val content: String)
+
 private val planPrompts = listOf(
-    "Señales de alerta", "Estrategias que puedo hacer por mi cuenta", "Lugares y personas para distraerme",
-    "Personas a las que puedo pedir ayuda", "Profesionales y servicios de salud", "Cómo hacer más seguro mi entorno",
+    SafetyPlanPrompt("Señales de alerta", "¿Qué cambios te indican que empieza un momento difícil y que puede ayudarte usar este plan?", "Ej.: aislarme, sentirme sin esperanza o dormir peor"),
+    SafetyPlanPrompt("Cosas que puedo hacer por mi cuenta", "¿Qué paso pequeño puedes probar durante los próximos minutos para cuidarte?", "Ej.: respirar con calma, escuchar algo que me gusta o ir a un lugar común"),
+    SafetyPlanPrompt("Personas o lugares para distraerme", "¿Con quién puedes hablar o a qué lugar seguro puedes ir para sentirte acompañado/a?", "Anota un nombre, teléfono o lugar que te resulte accesible"),
+    SafetyPlanPrompt("Personas a quienes puedo pedir ayuda", "¿A quién puedes decirle con claridad que necesitas compañía o apoyo?", "Anota cómo contactar y qué te gustaría pedir"),
+    SafetyPlanPrompt("Apoyo profesional y servicios", "¿Qué profesional, centro de salud o línea de ayuda puedes contactar?", "Anota nombres, teléfonos y horarios si los conoces"),
+    SafetyPlanPrompt("Cómo hacer más seguro mi entorno", "¿Qué puedes pedir a alguien de confianza que guarde, retire o limite mientras atraviesas un momento difícil?", "Anota una petición concreta que te resulte posible"),
 )
 
 @Composable
@@ -216,7 +228,11 @@ fun AnclaApp() {
                 )
             }
             if (showCrisis) {
-                CrisisDialog(userData = userData, onDismiss = { showCrisis = false })
+                CrisisDialog(
+                    userData = userData,
+                    onDismiss = { showCrisis = false },
+                    onOpenPlan = { showCrisis = false; screen = Screen.PLAN },
+                )
             }
         }
     }
@@ -347,7 +363,7 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun CrisisDialog(userData: UserData, onDismiss: () -> Unit) {
+private fun CrisisDialog(userData: UserData, onDismiss: () -> Unit, onOpenPlan: () -> Unit) {
     val context = LocalContext.current
     val selected = EmergencyHotlines.countries.find { it.code == userData.countryCode }
     val hotlineNumber = if (selected == null) userData.customNumber else selected.number
@@ -367,6 +383,7 @@ private fun CrisisDialog(userData: UserData, onDismiss: () -> Unit) {
             Column(horizontalAlignment = Alignment.End) {
                 Button(onClick = { dial(context, emergencyNumber) }) { Text("Llamar a emergencias") }
                 TextButton(onClick = { dial(context, hotlineNumber) }, enabled = hotlineNumber.isNotBlank()) { Text("Llamar a la línea de apoyo") }
+                TextButton(onClick = onOpenPlan) { Text("Abrir mi plan de seguridad") }
                 TextButton(onClick = onDismiss) { Text("Cerrar") }
             }
         },
@@ -518,6 +535,12 @@ private fun GroundingScreen(modifier: Modifier) {
 @Composable
 private fun SafetyPlanScreen(initial: List<String>, modifier: Modifier, onSave: (List<String>) -> Unit) {
     val answers = remember(initial) { mutableStateListOf<String>().apply { addAll((0..5).map { initial.getOrElse(it) { "" } }) } }
+    val context = LocalContext.current
+    var showShareDialog by remember { mutableStateOf(false) }
+    var showShareError by remember { mutableStateOf(false) }
+    val shareableSections = answers.mapIndexedNotNull { index, answer ->
+        answer.trim().takeIf { it.isNotBlank() }?.let { ShareablePlanSection(index + 1, planPrompts[index].title, it) }
+    }
     Column(
         modifier.fillMaxSize().background(AnclaColors.Canvas).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -548,13 +571,119 @@ private fun SafetyPlanScreen(initial: List<String>, modifier: Modifier, onSave: 
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(18.dp),
         ) { Text("Guardar mi plan", fontWeight = FontWeight.SemiBold) }
-        Text("El plan se cifra en este dispositivo. Si lo compartes, elige a alguien de confianza.", style = MaterialTheme.typography.bodySmall, color = AnclaColors.MutedInk)
+        OutlinedButton(
+            onClick = { showShareDialog = true },
+            enabled = shareableSections.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(18.dp),
+        ) { Text("Compartir una copia") }
+        Text(
+            if (shareableSections.isEmpty()) "Añade un paso para preparar una copia que puedas compartir."
+            else "El plan guardado se cifra en este dispositivo. Compartir abrirá la app que elijas, sin crear un enlace web.",
+            style = MaterialTheme.typography.bodySmall,
+            color = AnclaColors.MutedInk,
+        )
+        if (showShareDialog) {
+            SafetyPlanShareDialog(
+                sections = shareableSections,
+                onDismiss = { showShareDialog = false },
+                onContinue = { selectedSections ->
+                    showShareDialog = false
+                    val message = buildString {
+                        appendLine("Mi plan de seguridad")
+                        appendLine()
+                        selectedSections.forEach { section ->
+                            appendLine("${section.number}. ${section.title}")
+                            appendLine(section.content)
+                            appendLine()
+                        }
+                    }.trim()
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "Mi plan personal")
+                        putExtra(Intent.EXTRA_TEXT, message)
+                    }
+                    try {
+                        context.startActivity(Intent.createChooser(sendIntent, "Compartir una copia"))
+                    } catch (_: ActivityNotFoundException) {
+                        showShareError = true
+                    }
+                },
+            )
+        }
+        if (showShareError) {
+            AlertDialog(
+                onDismissRequest = { showShareError = false },
+                title = { Text("No se pudo abrir el menú para compartir") },
+                text = { Text("Puedes intentarlo de nuevo más tarde. Tu plan sigue guardado únicamente en este dispositivo.") },
+                confirmButton = { TextButton(onClick = { showShareError = false }) { Text("Entendido") } },
+            )
+        }
         Spacer(Modifier.height(12.dp))
     }
 }
 
 @Composable
-private fun PlanStepCard(index: Int, prompt: String, value: String, onValueChange: (String) -> Unit) {
+private fun SafetyPlanShareDialog(
+    sections: List<ShareablePlanSection>,
+    onDismiss: () -> Unit,
+    onContinue: (List<ShareablePlanSection>) -> Unit,
+) {
+    val selected = remember(sections) { mutableStateListOf<Boolean>().apply { sections.forEach { add(true) } } }
+    val hasSelection = selected.any { it }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Revisa qué quieres compartir") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Elige los apartados que quieres incluir. Al continuar, Android abrirá el menú para elegir una app y destinatario.")
+                sections.forEachIndexed { index, section ->
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .toggleable(
+                                value = selected[index],
+                                role = Role.Checkbox,
+                                onValueChange = { selected[index] = it },
+                            )
+                            .padding(vertical = 4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = selected[index], onCheckedChange = null)
+                            Text(section.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        }
+                        Text(
+                            section.content,
+                            modifier = Modifier.padding(start = 48.dp, end = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AnclaColors.MutedInk,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Text(
+                    "Ancla no crea un enlace ni guarda una copia en la web. La app que elijas recibirá el texto marcado y podría conservarlo o reenviarlo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AnclaColors.MutedInk,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = hasSelection,
+                onClick = { onContinue(sections.filterIndexed { index, _ -> selected[index] }) },
+            ) { Text("Elegir app") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+@Composable
+private fun PlanStepCard(index: Int, prompt: SafetyPlanPrompt, value: String, onValueChange: (String) -> Unit) {
     val tints = listOf(AnclaColors.TealTint, AnclaColors.PeachTint, AnclaColors.GoldTint, AnclaColors.LilacTint, AnclaColors.RoseTint, AnclaColors.TealTint)
     val accents = listOf(AnclaColors.Teal, Color(0xFF9B5C3D), Color(0xFF9B772F), AnclaColors.Lilac, AnclaColors.Rose, AnclaColors.Teal)
     Card(
@@ -569,12 +698,14 @@ private fun PlanStepCard(index: Int, prompt: String, value: String, onValueChang
                     Modifier.size(38.dp).clip(CircleShape).background(tints[index]),
                     contentAlignment = Alignment.Center,
                 ) { Text("${index + 1}", color = accents[index], fontWeight = FontWeight.Bold) }
-                Text(prompt, style = MaterialTheme.typography.titleMedium, color = AnclaColors.Ink, fontWeight = FontWeight.SemiBold)
+                Text(prompt.title, style = MaterialTheme.typography.titleMedium, color = AnclaColors.Ink, fontWeight = FontWeight.SemiBold)
             }
+            Text(prompt.question, style = MaterialTheme.typography.bodyMedium, color = AnclaColors.MutedInk)
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
-                label = { Text("Escribe aquí, si te apetece") },
+                label = { Text("Anota una idea, contacto o paso") },
+                placeholder = { Text(prompt.hint, style = MaterialTheme.typography.bodySmall) },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
                 shape = RoundedCornerShape(16.dp),

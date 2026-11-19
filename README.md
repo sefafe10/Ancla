@@ -7,7 +7,9 @@ MVP Android nativo de apoyo emocional, offline-first y sin analítica.
 - Onboarding con selección de España, México y Colombia, más configuración manual de una línea y el número de emergencias local.
 - Acceso persistente a ayuda con `ACTION_DIAL`; la app nunca inicia llamadas directamente.
 - Ejercicio de respiración visual y grounding 5–4–3–2–1.
-- Plan de seguridad personal de seis apartados.
+- Plan de seguridad personal guiado en seis pasos (señales de alerta, estrategias propias, distracción, apoyo cercano, ayuda profesional y seguridad del entorno), basado en el modelo de [VA MIRECC](https://www.mirecc.va.gov/MIRECC/visn19/safety-planning/index.asp).
+- Acceso al plan desde el panel «Ayuda ahora» para consultarlo con menos pasos durante un momento difícil.
+- Compartir solo los apartados elegidos mediante el menú nativo de Android, con revisión previa y sin crear enlaces ni copias web.
 - Preferencias y plan guardados como un único bloque AES-GCM; la clave AES vive en Android Keystore.
 - Directorio de apoyo cercano con tarjetas de profesionales de salud mental, centros de salud, hospitales y recursos comunitarios.
 - Radio seleccionable de 1 a 20 km, con 3 km por defecto; al cambiarlo después de buscar, pulsa «Aplicar radio» para actualizar.
